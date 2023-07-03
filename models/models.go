@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -55,14 +56,27 @@ type RouterDec struct {
 }
 
 func (channel *Channel) ScanFromResult(result *sql.Rows) error {
-	return result.Scan(
+	var parentId *int = nil
+
+	err := result.Scan(
 		&channel.ID,
 		&channel.OwnerID,
-		&channel.ParentID,
+		&parentId,
 		&channel.Name,
 		&channel.Type,
 		&channel.CreatedAt,
 	)
+	if err != nil {
+		return err
+	}
+
+	if channel.ID != 1 && parentId == nil {
+		return fmt.Errorf("channel id is not 1 but the parent id is null")
+	} else if channel.ID != 1 {
+		channel.ParentID = *parentId
+	}
+
+	return nil
 }
 
 func (user *User) ScanFromResult(result *sql.Rows) error {
@@ -93,25 +107,40 @@ func (message *Message) ScanFromResult(result *sql.Rows) error {
 	)
 }
 
-func (routerDec *RouterDec) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	origin := req.Header.Get("Origin")
+// Frontend origins
+var allowedOrigins = []string{"http://localhost:5000", "http://192.168.1.12:5000"}
+
+func checkOrigin(origin string) string {
+	for _, allowedOrigin := range allowedOrigins {
+		if allowedOrigin == origin {
+			return origin
+		}
+	}
+	return ""
+}
+
+func (routerDec *RouterDec) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	origin = checkOrigin(origin)
+
 	if origin != "" {
-		rw.Header().Set(
+		w.Header().Set(
 			"Access-Control-Allow-Origin", origin,
 		)
-		rw.Header().Set(
+		w.Header().Set(
 			"Access-Control-Allow-Methods",
-			"POST, GET, PUT, DELETE, PATCH",
+			"POST, GET",
 		)
-		rw.Header().Add(
+		w.Header().Add(
 			"Access-Control-Allow-Headers",
-			"Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With",
+			"User-ID",
+			// "Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With, User-ID",
 		)
 	}
 
-	if req.Method == "OPTIONS" {
+	if r.Method == "OPTIONS" {
 		return
 	}
 
-	routerDec.Router.ServeHTTP(rw, req)
+	routerDec.Router.ServeHTTP(w, r)
 }

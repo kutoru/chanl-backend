@@ -14,6 +14,7 @@ func main() {
 	dbmanager.ConnectToDB()
 	dbmanager.ResetDB()
 	dbmanager.TestDB()
+	defer dbmanager.DisconnectFromDB()
 
 	r := endpoints.GetRouter()
 	http.Handle("/", &models.RouterDec{Router: r})

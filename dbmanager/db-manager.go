@@ -32,6 +32,10 @@ func ConnectToDB() {
 	log.Println("Connected to db")
 }
 
+func DisconnectFromDB() {
+	glb.DB.Close()
+}
+
 func ResetDB() {
 	script, err := os.ReadFile("./create_db.sql")
 	if err != nil {
