@@ -6,17 +6,33 @@ import (
 	"main/models"
 	"net/http"
 	"strconv"
+
+	"github.com/gorilla/mux"
 )
 
-func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
-	log.Println("getGlobalChannel called")
+func getChannel(w http.ResponseWriter, r *http.Request) {
+	log.Println("getChannel called")
+
+	// Getting and checking channel id
+
+	vars := mux.Vars(r)
+	channelIdString, ok := vars["CHANNEL_ID"]
+	if !ok {
+		http.Error(w, "Could not get the channel id", http.StatusBadRequest)
+		return
+	}
+
+	channelId, err := strconv.Atoi(channelIdString)
+	if err != nil {
+		http.Error(w, "Could not convert channel id to an int", http.StatusBadRequest)
+		return
+	}
 
 	// Checking user id. TODO: do some kind of authorization check instead
 
 	userIdString := r.Header.Get("User-ID")
 	userId := 0
-	var err error
-	if len(userIdString) > 0 {
+	if userIdString != "" {
 		userId, err = strconv.Atoi(userIdString)
 		if err != nil {
 			http.Error(w, "Could not convert user id to an int", http.StatusBadRequest)
@@ -24,13 +40,13 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Getting global channel info
+	// Getting channel info
 
 	result, err := glb.DB.Query(`
-		SELECT * FROM channels WHERE id = 1;
-	`)
+		SELECT * FROM channels WHERE id = ?;
+	`, channelId)
 	if err != nil || !result.Next() {
-		http.Error(w, "Could not get db result", http.StatusInternalServerError)
+		http.Error(w, "Could not get db result for channel", http.StatusInternalServerError)
 		log.Println(err)
 		return
 	}
@@ -63,10 +79,10 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 	// Otherwise getting the currentChannel info and the childChannels
 
 	result, err = glb.DB.Query(`
-		SELECT * FROM joined_channels WHERE channel_id = 1 AND user_id = ?;
-	`, userId)
+		SELECT * FROM joined_channels WHERE user_id = ? AND channel_id = ?;
+	`, userId, channelId)
 	if err != nil || !result.Next() {
-		http.Error(w, "Could not get db result", http.StatusInternalServerError)
+		http.Error(w, "Could not get db result for joinedChannel", http.StatusInternalServerError)
 		log.Println(err)
 		return
 	}
@@ -74,7 +90,7 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 	err = currentChannel.ScanFromResult(result)
 	result.Close()
 	if err != nil {
-		http.Error(w, "Could not scan channel from result", http.StatusInternalServerError)
+		http.Error(w, "Could not scan joinedChannel from result", http.StatusInternalServerError)
 		log.Println(err)
 		return
 	}
@@ -88,8 +104,8 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 		INNER JOIN channels ON
 		(joined_channels.user_id = ?) AND
 		(joined_channels.channel_id = channels.id) AND
-		(channels.parent_id = 1);
-	`, userId)
+		(channels.parent_id = ?);
+	`, userId, channelId)
 	if err != nil {
 		http.Error(w, "Could not get db result for childChannels", http.StatusInternalServerError)
 		log.Println(err)
@@ -100,7 +116,7 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 		var joinedChannel models.JoinedChannel
 		err := joinedChannel.ScanFromResult(result)
 		if err != nil {
-			http.Error(w, "Could not parse joinedChannel.Channel from result", http.StatusInternalServerError)
+			http.Error(w, "Could not parse child joinedChannel from result", http.StatusInternalServerError)
 			log.Println(err)
 			return
 		}
@@ -109,7 +125,7 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 			SELECT * FROM channels WHERE id = ?;
 		`, joinedChannel.ChannelID)
 		if err != nil || !channelResult.Next() {
-			http.Error(w, "Could not get channel from db by joinedChannel.ChannelID", http.StatusInternalServerError)
+			http.Error(w, "Could not get child joinedChannel.Channel result from db. The channel id exists in joined_channels but doesn't exist in channels?", http.StatusInternalServerError)
 			log.Println(err)
 			return
 		}
@@ -118,7 +134,7 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 		err = joinedChannel.Channel.ScanFromResult(channelResult)
 		channelResult.Close()
 		if err != nil {
-			http.Error(w, "Could not parse joinedChannel.Channel from result", http.StatusInternalServerError)
+			http.Error(w, "Could not parse child joinedChannel.Channel from result", http.StatusInternalServerError)
 			log.Println(err)
 			return
 		}
@@ -127,17 +143,6 @@ func getGlobalChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result.Close()
-
-	// For each user there should be exactly 2 channels that have parentId 1. These channels are Private and Personal
-	// Checking if the array is correct (technically the database tables and the queries should be safe enough, but just in case i also check here)
-
-	if len(childChannels) != 2 ||
-		!(childChannels[0].Channel.Type == models.Private || childChannels[1].Channel.Type == models.Private) ||
-		!(childChannels[0].Channel.Type == models.Personal || childChannels[1].Channel.Type == models.Personal) {
-		http.Error(w, "Invalid childChannels", http.StatusInternalServerError)
-		log.Printf("len: %v", len(childChannels))
-		return
-	}
 
 	// And finally constructing and sending the response
 

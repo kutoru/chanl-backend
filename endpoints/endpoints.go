@@ -14,19 +14,17 @@ func GetRouter() *mux.Router {
 	r.HandleFunc("/", homePage).Methods("GET")
 	r.HandleFunc("/websocket-test", webSocketTest).Methods("GET")
 
-	r.HandleFunc("/api/global", getGlobalChannel).Methods("GET")
-	// r.HandleFunc("/api/connect-to-channel/{CHANNEL_ID}", connectToChannel)
-	r.HandleFunc("/api/private/{USER_ID}", getPrivateChannel).Methods("GET")
+	r.HandleFunc("/api/get-channel/{CHANNEL_ID}", getChannel).Methods("GET")
+	r.HandleFunc("/api/connect-to-channel/{CHANNEL_ID}", connectToChannel).Methods("GET")
 
-	// taken from other project, delete later
-	// r.HandleFunc("/api/posts", getPosts).Methods("GET")
-	// r.HandleFunc("/api/posts", checkTokenWrapper(addPost)).Methods("POST")
-	// r.HandleFunc("/api/posts/{POST_ID}", checkTokenWrapper(deletePost)).Methods("DELETE")
-	// r.HandleFunc("/api/posts/{POST_ID}/comments", checkTokenWrapper(addComment)).Methods("POST")
-	// r.HandleFunc("/api/auth/login", getTokenFromPassword).Methods("POST")
-	// r.HandleFunc("/api/auth/create-user", addUser).Methods("POST")
-	// r.HandleFunc("/api/auth/token", checkTokenWrapper(getTokenFromToken)).Methods("GET")
-	// r.HandleFunc("/api/users/{USERNAME}", checkTokenWrapper(getUser)).Methods("GET")
+	// todos
+	// r.HandleFunc("/api/create-channel", createChannel).Methods("POST")
+
+	// r.HandleFunc("/api/create-message", createMessage).Methods("POST")
+	// r.HandleFunc("/api/get-message", getMessage).Methods("GET")
+
+	// r.HandleFunc("/api/create-user", createUser).Methods("POST")
+	// r.HandleFunc("/api/get-user/{USER_ID}", getUser).Methods("GET")
 
 	return r
 }
