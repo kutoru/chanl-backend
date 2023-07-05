@@ -46,7 +46,7 @@ CREATE TABLE messages (
     id INT AUTO_INCREMENT NOT NULL,
     user_id INT NOT NULL,
     channel_id INT NOT NULL,
-    text VARCHAR(255) NOT NULL,
+    text VARCHAR(1024) NOT NULL,
     sent_at DATETIME NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (channel_id) REFERENCES channels(id),

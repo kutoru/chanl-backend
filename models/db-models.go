@@ -3,9 +3,6 @@ package models
 import (
 	"database/sql"
 	"fmt"
-	"net/http"
-
-	"github.com/gorilla/mux"
 )
 
 type ChannelType string
@@ -44,15 +41,12 @@ type JoinedChannel struct {
 }
 
 type Message struct {
-	ID        int    `json:"id"`
-	UserID    int    `json:"userId"`
-	ChannelID int    `json:"channelId"`
-	Text      string `json:"text"`
-	SentAt    string `json:"sentAt"`
-}
-
-type RouterDec struct {
-	Router *mux.Router
+	ID        int     `json:"id"`
+	UserID    int     `json:"userId"`
+	ChannelID int     `json:"channelId"`
+	Text      string  `json:"text"`
+	SentAt    string  `json:"sentAt"`
+	UserName  *string `json:"userName"`
 }
 
 func (channel *Channel) ScanFromResult(result *sql.Rows) error {
@@ -97,50 +91,23 @@ func (joinedChannel *JoinedChannel) ScanFromResult(result *sql.Rows) error {
 	)
 }
 
-func (message *Message) ScanFromResult(result *sql.Rows) error {
-	return result.Scan(
-		&message.ID,
-		&message.UserID,
-		&message.ChannelID,
-		&message.Text,
-		&message.SentAt,
-	)
-}
-
-// Frontend origins
-var allowedOrigins = []string{"http://localhost:5000", "http://192.168.1.12:5000"}
-
-func checkOrigin(origin string) string {
-	for _, allowedOrigin := range allowedOrigins {
-		if allowedOrigin == origin {
-			return origin
-		}
-	}
-	return ""
-}
-
-func (routerDec *RouterDec) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	origin = checkOrigin(origin)
-
-	if origin != "" {
-		w.Header().Set(
-			"Access-Control-Allow-Origin", origin,
+func (message *Message) ScanFromResult(result *sql.Rows, scanUserName bool) error {
+	if scanUserName {
+		return result.Scan(
+			&message.ID,
+			&message.UserID,
+			&message.ChannelID,
+			&message.Text,
+			&message.SentAt,
+			&message.UserName,
 		)
-		w.Header().Set(
-			"Access-Control-Allow-Methods",
-			"POST, GET",
-		)
-		w.Header().Add(
-			"Access-Control-Allow-Headers",
-			"User-ID",
-			// "Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With, User-ID",
+	} else {
+		return result.Scan(
+			&message.ID,
+			&message.UserID,
+			&message.ChannelID,
+			&message.Text,
+			&message.SentAt,
 		)
 	}
-
-	if r.Method == "OPTIONS" {
-		return
-	}
-
-	routerDec.Router.ServeHTTP(w, r)
 }

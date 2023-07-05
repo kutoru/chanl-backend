@@ -1,4 +1,4 @@
-module main
+module github.com/kutoru/chanl-backend
 
 go 1.20
 

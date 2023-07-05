@@ -3,7 +3,7 @@
 This is the backend part of my project called "chanl".\
 See the frontend [here](https://github.com/kutoru/chanl-frontend).\
 The project is generally supposed to be a text-only Discord clone.\
-With this project I wanted to learn WebSockets and fullstack web development.
+With this project I wanted to mostly focus on the functionality of WebSockets and fullstack web development rather than design.
 
 # Project status
 
@@ -34,7 +34,7 @@ Available to the members of servers that the user has joined.\
 Only the user can write in the channel.
 - Server: can be created by users.\
 Contains a list of rooms that the owner has created.\
-Available to the members of the server.\
+Available to everyone.\
 Only the owner can write in the channel.
 - Room: can be created by the owner of the Server.\
 Doesn't have any children.\

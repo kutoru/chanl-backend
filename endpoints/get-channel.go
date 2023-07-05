@@ -2,12 +2,12 @@ package endpoints
 
 import (
 	"log"
-	"main/glb"
-	"main/models"
 	"net/http"
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/kutoru/chanl-backend/glb"
+	"github.com/kutoru/chanl-backend/models"
 )
 
 func getChannel(w http.ResponseWriter, r *http.Request) {

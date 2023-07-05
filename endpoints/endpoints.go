@@ -11,10 +11,8 @@ import (
 func GetRouter() *mux.Router {
 	r := mux.NewRouter()
 
-	r.HandleFunc("/", homePage).Methods("GET")
-	r.HandleFunc("/websocket-test", webSocketTest).Methods("GET")
-
 	r.HandleFunc("/api/get-channel/{CHANNEL_ID}", getChannel).Methods("GET")
+	r.HandleFunc("/api/prepare-channel/{CHANNEL_ID}", prepareWebsocketConnection).Methods("GET")
 	r.HandleFunc("/api/connect-to-channel/{CHANNEL_ID}", connectToChannel).Methods("GET")
 
 	// todos

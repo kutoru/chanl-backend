@@ -2,11 +2,12 @@ package main
 
 import (
 	"log"
-	"main/dbmanager"
-	"main/endpoints"
-	"main/glb"
-	"main/models"
 	"net/http"
+
+	"github.com/kutoru/chanl-backend/dbmanager"
+	"github.com/kutoru/chanl-backend/endpoints"
+	"github.com/kutoru/chanl-backend/glb"
+	"github.com/kutoru/chanl-backend/models"
 )
 
 func main() {
@@ -16,8 +17,9 @@ func main() {
 	dbmanager.TestDB()
 	defer dbmanager.DisconnectFromDB()
 
+	endpoints.InitializeActiveClients()
 	r := endpoints.GetRouter()
 	http.Handle("/", &models.RouterDec{Router: r})
-	log.Println("API server is listening on http://localhost:4000")
+	log.Println("API server is listening on http://192.168.1.12:4000")
 	log.Panicln(http.ListenAndServe(":4000", nil))
 }

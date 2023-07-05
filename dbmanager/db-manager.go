@@ -4,16 +4,16 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"main/glb"
 	"os"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/kutoru/chanl-backend/glb"
 )
 
 func ConnectToDB() {
 	dbInfo := fmt.Sprintf(
-		"root:%s@tcp(localhost:3306)/%s?multiStatements=true&loc=Europe%%2FLondon",
+		"root:%s@tcp(localhost:3306)/%s?multiStatements=true",
 		os.Getenv("DB_PASS"), os.Getenv("DB_NAME"),
 	)
 
