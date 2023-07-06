@@ -10,6 +10,12 @@ import (
 	"github.com/kutoru/chanl-backend/models"
 )
 
+type ChannelResponse struct {
+	ParentChannel  *models.JoinedChannel   `json:"parentChannel"`
+	CurrentChannel *models.JoinedChannel   `json:"currentChannel"`
+	ChildChannels  []*models.JoinedChannel `json:"childChannels"`
+}
+
 func getChannel(w http.ResponseWriter, r *http.Request) {
 	log.Println("getChannel called")
 
@@ -42,6 +48,9 @@ func getChannel(w http.ResponseWriter, r *http.Request) {
 
 	// Getting channel info
 
+	var currentChannel *models.JoinedChannel = &models.JoinedChannel{}
+	currentChannel.Channel = &models.Channel{}
+
 	result, err := glb.DB.Query(`
 		SELECT * FROM channels WHERE id = ?;
 	`, channelId)
@@ -51,8 +60,6 @@ func getChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var currentChannel models.JoinedChannel
-	currentChannel.Channel = &models.Channel{}
 	err = currentChannel.Channel.ScanFromResult(result)
 	result.Close()
 	if err != nil {
@@ -64,11 +71,9 @@ func getChannel(w http.ResponseWriter, r *http.Request) {
 	// If user id is 0, the user is not logged in. In that case just returning the channel info
 
 	if userId == 0 {
-		response := struct {
-			CurrentChannel *models.JoinedChannel   `json:"currentChannel"`
-			ChildChannels  []*models.JoinedChannel `json:"childChannels"`
-		}{
-			CurrentChannel: &currentChannel,
+		response := ChannelResponse{
+			ParentChannel:  nil,
+			CurrentChannel: currentChannel,
 			ChildChannels:  []*models.JoinedChannel{},
 		}
 
@@ -76,7 +81,51 @@ func getChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Otherwise getting the currentChannel info and the childChannels
+	// Otherwise getting parentChannel, currentChannel info and childChannels
+
+	var parentChannel *models.JoinedChannel = nil
+
+	// Have to do an extra check for parentChannel because global channel doesn't have a parent
+	if currentChannel.Channel.ID != 1 {
+		parentChannel = &models.JoinedChannel{}
+		parentChannel.Channel = &models.Channel{}
+
+		result, err = glb.DB.Query(`
+			SELECT * FROM joined_channels WHERE user_id = ? AND channel_id = ?;
+		`, userId, currentChannel.Channel.ParentID)
+		if err != nil || !result.Next() {
+			http.Error(w, "Could not get db result for parentChannel", http.StatusInternalServerError)
+			log.Println(err)
+			return
+		}
+
+		err = parentChannel.ScanFromResult(result)
+		result.Close()
+		if err != nil {
+			http.Error(w, "Could not scan parentChannel from result", http.StatusInternalServerError)
+			log.Println(err)
+			return
+		}
+
+		result, err = glb.DB.Query(`
+			SELECT * FROM channels WHERE id = ?;
+		`, parentChannel.ChannelID)
+		if err != nil || !result.Next() {
+			http.Error(w, "Could not get db result for parentChannel.Channel", http.StatusInternalServerError)
+			log.Println(err)
+			return
+		}
+
+		err = parentChannel.Channel.ScanFromResult(result)
+		result.Close()
+		if err != nil {
+			http.Error(w, "Could not scan parentChannel.Channel from result", http.StatusInternalServerError)
+			log.Println(err)
+			return
+		}
+	}
+
+	// Getting currentChannel info
 
 	result, err = glb.DB.Query(`
 		SELECT * FROM joined_channels WHERE user_id = ? AND channel_id = ?;
@@ -114,6 +163,8 @@ func getChannel(w http.ResponseWriter, r *http.Request) {
 
 	for result.Next() {
 		var joinedChannel models.JoinedChannel
+		joinedChannel.Channel = &models.Channel{}
+
 		err := joinedChannel.ScanFromResult(result)
 		if err != nil {
 			http.Error(w, "Could not parse child joinedChannel from result", http.StatusInternalServerError)
@@ -130,7 +181,6 @@ func getChannel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		joinedChannel.Channel = &models.Channel{}
 		err = joinedChannel.Channel.ScanFromResult(channelResult)
 		channelResult.Close()
 		if err != nil {
@@ -146,11 +196,9 @@ func getChannel(w http.ResponseWriter, r *http.Request) {
 
 	// And finally constructing and sending the response
 
-	response := struct {
-		CurrentChannel *models.JoinedChannel   `json:"currentChannel"`
-		ChildChannels  []*models.JoinedChannel `json:"childChannels"`
-	}{
-		CurrentChannel: &currentChannel,
+	response := ChannelResponse{
+		ParentChannel:  parentChannel,
+		CurrentChannel: currentChannel,
 		ChildChannels:  childChannels,
 	}
 

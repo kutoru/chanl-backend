@@ -139,6 +139,7 @@ func connectToChannel(w http.ResponseWriter, r *http.Request) {
 
 	var channel models.Channel
 	err = channel.ScanFromResult(result)
+	result.Close()
 	if err != nil {
 		http.Error(w, "Could not parse channel info from db result", http.StatusBadRequest)
 		log.Println(err)
@@ -203,6 +204,8 @@ func connectToChannel(w http.ResponseWriter, r *http.Request) {
 		messages = append(messages, message)
 	}
 
+	result.Close()
+
 	err = conn.WriteJSON(messages)
 	if err != nil {
 		log.Println("Could not send the messages response")
@@ -259,6 +262,7 @@ func connectToChannel(w http.ResponseWriter, r *http.Request) {
 		}
 
 		err = result.Scan(&message.ID, &message.SentAt, &message.UserName)
+		result.Close()
 		if err != nil {
 			log.Println("Could not parse additional message info from db result")
 			log.Println(err)
