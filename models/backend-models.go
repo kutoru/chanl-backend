@@ -96,6 +96,8 @@ func (acw *ActiveClientsWrapper) AddNewUser(channelId int, userId int) *http.Coo
 		SameSite: http.SameSiteNoneMode,
 	}
 
+	acw.RemoveUser(channelId, userId) // Just in case calling RemoveUser to delete any previous user sessions
+
 	acw.clientsWrapper[channelId][userId] = &ClientWrapper{
 		Cookie: cookie,
 		Conn:   nil,
@@ -125,10 +127,8 @@ func (acw *ActiveClientsWrapper) RemoveUser(channelId int, userId int) {
 	channel, channelExists := acw.clientsWrapper[channelId]
 	if channelExists {
 		userInfo, userExists := channel[userId]
-		if userExists {
-			if userInfo.Conn != nil {
-				userInfo.Conn.Close()
-			}
+		if userExists && userInfo.Conn != nil { // If the connection is nil, that most likely means that the user is about to connect
+			userInfo.Conn.Close()
 			delete(acw.clientsWrapper[channelId], userId)
 		}
 	}

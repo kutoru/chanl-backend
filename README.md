@@ -7,7 +7,7 @@ With this project I wanted to mostly focus on the functionality of WebSockets an
 
 # Project status
 
-Just started
+Mostly functional but with some important features currently missing (user auth, account creation, online user display, friends system and a few others).
 
 # The idea
 

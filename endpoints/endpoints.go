@@ -2,8 +2,10 @@ package endpoints
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gorilla/mux"
 )
@@ -42,4 +44,19 @@ func sendJSONResponse(w http.ResponseWriter, data interface{}) {
 	if err != nil {
 		log.Printf("Failed to write the response body: %v\n", err)
 	}
+}
+
+func getMuxVar(r *http.Request, varKey string) (int, error) {
+	vars := mux.Vars(r)
+	varString, ok := vars[varKey]
+	if !ok {
+		return 0, fmt.Errorf("could not get mux var (%v)", varKey)
+	}
+
+	varInt, err := strconv.Atoi(varString)
+	if err != nil {
+		return 0, fmt.Errorf("could not convert mux var (%v) to an int", varKey)
+	}
+
+	return varInt, nil
 }

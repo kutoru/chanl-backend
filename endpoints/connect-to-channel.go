@@ -30,16 +30,9 @@ func prepareWebsocketConnection(w http.ResponseWriter, r *http.Request) {
 
 	// Getting channel id
 
-	vars := mux.Vars(r)
-	channelIdString, ok := vars["CHANNEL_ID"]
-	if !ok {
-		http.Error(w, "Could not get the channel id", http.StatusBadRequest)
-		return
-	}
-
-	channelId, err := strconv.Atoi(channelIdString)
+	channelId, err := getMuxVar(r, "CHANNEL_ID")
 	if err != nil {
-		http.Error(w, "Could not convert channel id to an int", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
