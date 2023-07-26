@@ -17,9 +17,15 @@ func main() {
 	dbmanager.TestDB()
 	defer dbmanager.DisconnectFromDB()
 
+	ip, err := glb.GetIP()
+	if err != nil {
+		log.Println(err)
+	}
+	port := ":4000"
+
 	endpoints.InitializeActiveClients()
 	r := endpoints.GetRouter()
 	http.Handle("/", &models.RouterDec{Router: r})
-	log.Println("API server is listening on http://192.168.1.12:4000")
-	log.Panicln(http.ListenAndServe(":4000", nil))
+	log.Printf("API server is listening on http://%v%v\n", ip, port)
+	log.Panicln(http.ListenAndServe(port, nil))
 }

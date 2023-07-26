@@ -15,6 +15,7 @@ CREATE TABLE users (
     name VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     created_at DATETIME NOT NULL,
+
     PRIMARY KEY (id)
 );
 
@@ -25,6 +26,7 @@ CREATE TABLE channels (
     name VARCHAR(255) NOT NULL,
     type ENUM('gl', 'pr', 'se', 'ro', 'pe', 'fr') NOT NULL,
     created_at DATETIME NOT NULL,
+
     FOREIGN KEY (parent_id) REFERENCES channels(id),
     FOREIGN KEY (owner_id) REFERENCES users(id),
     PRIMARY KEY (id),
@@ -37,6 +39,7 @@ CREATE TABLE joined_channels (
     channel_id INT NOT NULL,
     can_write BOOL NOT NULL,
     joined_at DATETIME NOT NULL,
+
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (channel_id) REFERENCES channels(id),
     PRIMARY KEY (user_id, channel_id)
@@ -48,6 +51,7 @@ CREATE TABLE messages (
     channel_id INT NOT NULL,
     text VARCHAR(1024) NOT NULL,
     sent_at DATETIME NOT NULL,
+
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (channel_id) REFERENCES channels(id),
     PRIMARY KEY (id)

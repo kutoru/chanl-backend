@@ -1,47 +1,15 @@
 package endpoints
 
 import (
+	"fmt"
 	"log"
 	"net/http"
-	"strconv"
-	"strings"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/kutoru/chanl-backend/glb"
 	"github.com/kutoru/chanl-backend/models"
+	"github.com/kutoru/chanl-backend/tokens"
 )
-
-func prepareWebsocketConnection(w http.ResponseWriter, r *http.Request) {
-	log.Println("prepareWebsocketConnection called")
-
-	// Getting user id
-
-	userIdString := r.Header.Get("User-ID")
-	userId := 0
-	var err error
-	if userIdString != "" {
-		userId, err = strconv.Atoi(userIdString)
-		if err != nil {
-			http.Error(w, "Could not convert user id to an int", http.StatusBadRequest)
-			return
-		}
-	}
-
-	// Getting channel id
-
-	channelId, err := getMuxVar(r, "CHANNEL_ID")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Creating and sending the cookie
-
-	cookie := activeClients.AddNewUser(channelId, userId)
-	http.SetCookie(w, cookie)
-	sendJSONResponse(w, true)
-}
 
 var activeClients models.ActiveClientsWrapper
 
@@ -72,52 +40,38 @@ func connectToChannel(w http.ResponseWriter, r *http.Request) {
 
 	// Getting user id and channel id from cookies
 
-	cookie, err := r.Cookie("_sc_")
+	cookie, err := r.Cookie("_wst_")
 	if err != nil {
 		http.Error(w, "Could not get the required cookie", http.StatusBadRequest)
+		log.Println(err)
 		return
 	}
 
-	splitCookie := strings.Split(cookie.Value, ".")
-	if len(splitCookie) != 2 {
-		http.Error(w, "Got invalid cookie format", http.StatusBadRequest)
-		return
-	}
+	log.Printf("Got cookie: %v\n", cookie)
 
-	channelIdString := splitCookie[0]
-	userIdString := splitCookie[1]
-
-	expextedChannelId, err := strconv.Atoi(channelIdString)
+	expectedChannelId, userId, err := tokens.ParseWebsocketToken(cookie.Value)
 	if err != nil {
-		http.Error(w, "Got invalid cookie channel id", http.StatusBadRequest)
+		http.Error(w, "Could not parse the cookie", http.StatusBadRequest)
+		log.Println(err)
 		return
 	}
 
-	userId, err := strconv.Atoi(userIdString)
-	if err != nil {
-		http.Error(w, "Got invalid cookie user id", http.StatusBadRequest)
-		return
-	}
+	log.Printf("Got cookie values: %v, %v\n", expectedChannelId, userId)
 
 	// Getting requested channel id and comparing it with cookie's channel id
 
-	vars := mux.Vars(r)
-	channelIdString, ok := vars["CHANNEL_ID"]
-	if !ok {
-		http.Error(w, "Could not get the channel id", http.StatusBadRequest)
-		return
-	}
-
-	channelId, err := strconv.Atoi(channelIdString)
+	channelId, err := getMuxVar(r, "CHANNEL_ID")
 	if err != nil {
-		http.Error(w, "Could not convert channel id to an int", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if channelId != expextedChannelId {
+	if channelId != expectedChannelId {
 		http.Error(w, "Expected channel id != requested channel id", http.StatusBadRequest)
 		return
 	}
+
+	activeClients.RemoveCookie(channelId, userId, true)
 
 	// Checking if the channel requires auth
 
@@ -155,7 +109,7 @@ func connectToChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = activeClients.AssignConnection(channelId, userId, conn)
+	err = activeClients.AssignConnection(channelId, userId, conn, true)
 	if err != nil {
 		log.Println("Could not assign the connection")
 		log.Println(err)
@@ -163,10 +117,10 @@ func connectToChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// RemoveUser also closes the connection
-	defer activeClients.RemoveUser(channelId, userId)
+	defer activeClients.RemoveUser(channelId, userId, true)
 
 	log.Println("Connection upgraded")
-	activeClients.Print()
+	activeClients.Print(true)
 
 	// Sending the existing channel messages to the client
 
@@ -209,74 +163,73 @@ func connectToChannel(w http.ResponseWriter, r *http.Request) {
 	for {
 		// The for loop pauses on the ReadJSON line and waits for a new message from the client
 		// Breaking out of this loop basically means closing the connection
-		// Getting a message
 
-		var message models.Message
-		err := conn.ReadJSON(&message)
+		err = listenForMessage(userId, channelId, conn)
 		if err != nil {
-			log.Println("Could not read the received message")
 			log.Println(err)
 			break
 		}
-
-		if userId <= 0 ||
-			userId != message.UserID || channelId != message.ChannelID ||
-			len(message.Text) < 1 || len(message.Text) > 1024 {
-			log.Println("Got invalid message")
-			log.Println(userId, channelId, message)
-			break
-		}
-
-		// Inserting it into the db
-
-		_, err = glb.DB.Exec(`
-			INSERT INTO messages (user_id, channel_id, text, sent_at)
-			VALUES (?, ?, ?, now());
-		`, message.UserID, message.ChannelID, message.Text)
-		if err != nil {
-			log.Println("Could not insert the message into the db")
-			log.Println(err)
-			break
-		}
-
-		log.Printf("Message processed: %v\n", message)
-
-		// Getting additional info for the message
-
-		result, err = glb.DB.Query(`
-			SELECT messages.id, messages.sent_at, users.name FROM messages
-			INNER JOIN users ON (messages.channel_id = ?) AND (messages.user_id = users.id)
-			WHERE users.id = ? ORDER BY messages.id DESC;
-		`, channelId, userId)
-		if err != nil || !result.Next() {
-			log.Println("Could not get the additional message info from the db")
-			log.Println(err)
-			break
-		}
-
-		err = result.Scan(&message.ID, &message.SentAt, &message.UserName)
-		result.Close()
-		if err != nil {
-			log.Println("Could not parse additional message info from db result")
-			log.Println(err)
-			break
-		}
-
-		log.Printf("Additional message info processed: %v\n", message)
-
-		// Sending the message to all clients in this channel
-		// Making an array of messages because that is what the frontend accepts
-
-		messageArray := []models.Message{message}
-		err = activeClients.SendMessagesToChannel(channelId, messageArray)
-		if err != nil {
-			log.Println("Could not send message to all activeClients")
-			log.Println(err)
-			break
-		}
-
-		log.Print("connectToChannel for loop finished without errors\n\n")
 	}
 
 	log.Printf("connectToChannel finished\n\n")
+}
+
+func listenForMessage(userId int, channelId int, conn *websocket.Conn) error {
+
+	// Getting a message
+
+	var message models.Message
+	err := conn.ReadJSON(&message)
+	if err != nil {
+		return fmt.Errorf("could not read the received message: %v", err)
+	}
+
+	if userId <= 0 ||
+		userId != message.UserID || channelId != message.ChannelID ||
+		len(message.Text) < 1 || len(message.Text) > 1024 {
+		return fmt.Errorf("got invalid message. %v, %v, %v", userId, channelId, message)
+	}
+
+	// Inserting it into the db
+
+	_, err = glb.DB.Exec(`
+		INSERT INTO messages (user_id, channel_id, text, sent_at)
+		VALUES (?, ?, ?, now());
+	`, message.UserID, message.ChannelID, message.Text)
+	if err != nil {
+		return fmt.Errorf("could not insert the message into the db: %v", err)
+	}
+
+	log.Printf("Message processed: %v\n", message)
+
+	// Getting additional info for the message
+
+	result, err := glb.DB.Query(`
+		SELECT messages.id, messages.sent_at, users.name FROM messages
+		INNER JOIN users ON (messages.channel_id = ?) AND (messages.user_id = users.id)
+		WHERE users.id = ? ORDER BY messages.id DESC;
+	`, channelId, userId)
+	if err != nil || !result.Next() {
+		return fmt.Errorf("could not get the additional message info from the db: %v", err)
+	}
+
+	err = result.Scan(&message.ID, &message.SentAt, &message.UserName)
+	result.Close()
+	if err != nil {
+		return fmt.Errorf("could not parse additional message info from db result: %v", err)
+	}
+
+	log.Printf("Additional message info processed: %v\n", message)
+
+	// Sending the message to all clients in this channel
+	// Making an array of messages because that is what the frontend accepts
+
+	messageArray := []models.Message{message}
+	err = activeClients.SendMessagesToChannel(channelId, messageArray, true)
+	if err != nil {
+		return fmt.Errorf("could not send message to all activeClients: %v", err)
+	}
+
+	log.Print("connectToChannel for loop finished without errors\n\n")
+	return nil
 }

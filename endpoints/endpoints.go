@@ -13,17 +13,16 @@ import (
 func GetRouter() *mux.Router {
 	r := mux.NewRouter()
 
+	// r.HandleFunc("/api/create-channel", createChannel).Methods("POST")
 	r.HandleFunc("/api/get-channel/{CHANNEL_ID}", getChannel).Methods("GET")
 	r.HandleFunc("/api/prepare-channel/{CHANNEL_ID}", prepareWebsocketConnection).Methods("GET")
 	r.HandleFunc("/api/connect-to-channel/{CHANNEL_ID}", connectToChannel).Methods("GET")
 
-	// todos
-	// r.HandleFunc("/api/create-channel", createChannel).Methods("POST")
+	r.HandleFunc("/api/create-user", createUser).Methods("POST")
+	r.HandleFunc("/api/auth-user", authUser).Methods("POST")
+	r.HandleFunc("/api/auth-with-token", authWithToken).Methods("GET")
+	r.HandleFunc("/api/logout", logoutUser).Methods("GET")
 
-	// r.HandleFunc("/api/create-message", createMessage).Methods("POST")
-	// r.HandleFunc("/api/get-message", getMessage).Methods("GET")
-
-	// r.HandleFunc("/api/create-user", createUser).Methods("POST")
 	// r.HandleFunc("/api/get-user/{USER_ID}", getUser).Methods("GET")
 
 	return r

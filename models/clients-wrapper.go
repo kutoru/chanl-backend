@@ -6,40 +6,65 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/kutoru/chanl-backend/tokens"
 )
 
+// In theory this wait system helps avoiding any async problems
+var busy bool = false
+
+// These two functions should always be used together
+func waitForBusy() {
+	for busy {
+		time.Sleep(time.Millisecond)
+	}
+	busy = true
+}
+
+func freeBusy() {
+	busy = false
+}
+
+// Individual client
 type ClientWrapper struct {
 	Cookie *http.Cookie
 	Conn   *websocket.Conn
 }
 
+// All active clients
 // map[channelId]map[userId]*ClientWrapper
 type ActiveClientsWrapper struct {
 	clientsWrapper map[int]map[int]*ClientWrapper
-}
-
-type RouterDec struct {
-	Router *mux.Router
 }
 
 func (acw *ActiveClientsWrapper) Initialize() {
 	acw.clientsWrapper = make(map[int]map[int]*ClientWrapper)
 }
 
-func (acw *ActiveClientsWrapper) AddChannel(channelId int) {
+func (acw *ActiveClientsWrapper) AddChannel(channelId int, wait bool) {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
 	_, exists := acw.clientsWrapper[channelId]
 	if !exists {
 		acw.clientsWrapper[channelId] = make(map[int]*ClientWrapper)
 	}
 }
 
-func (acw *ActiveClientsWrapper) RemoveChannel(channelId int) {
+func (acw *ActiveClientsWrapper) RemoveChannel(channelId int, wait bool) {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
 	channel, exists := acw.clientsWrapper[channelId]
 	if exists {
 		for userId, userInfo := range channel {
-			userInfo.Conn.Close()
+			if userInfo.Conn != nil {
+				userInfo.Conn.Close()
+			}
 			delete(acw.clientsWrapper[channelId], userId)
 		}
 		delete(acw.clientsWrapper, channelId)
@@ -48,7 +73,12 @@ func (acw *ActiveClientsWrapper) RemoveChannel(channelId int) {
 
 // If userId is 0, changes it to the lowest negative number that is not present in the map.
 // Returns the user id that it added
-func (acw *ActiveClientsWrapper) checkUserID(channelId int, userId int) int {
+func (acw *ActiveClientsWrapper) checkUserID(channelId int, userId int, wait bool) int {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
 	channel, exists := acw.clientsWrapper[channelId]
 	if !exists {
 		if userId > 0 {
@@ -61,7 +91,7 @@ func (acw *ActiveClientsWrapper) checkUserID(channelId int, userId int) int {
 	if userId > 0 {
 		_, exists := channel[userId]
 		if exists {
-			acw.RemoveUser(channelId, userId)
+			acw.RemoveUser(channelId, userId, false)
 		}
 		return userId
 	}
@@ -76,39 +106,45 @@ func (acw *ActiveClientsWrapper) checkUserID(channelId int, userId int) int {
 	return minId
 }
 
-var currentlyAdding bool = false
-
-func (acw *ActiveClientsWrapper) AddNewUser(channelId int, userId int) *http.Cookie {
-	for currentlyAdding {
-		time.Sleep(10 * time.Millisecond)
+func (acw *ActiveClientsWrapper) AddNewUser(channelId int, userId int, wait bool) (*http.Cookie, error) {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
 	}
 
-	currentlyAdding = true
-	acw.AddChannel(channelId)
-	userId = acw.checkUserID(channelId, userId)
+	acw.AddChannel(channelId, false)
+	userId = acw.checkUserID(channelId, userId, false)
+	token, err := tokens.CreateWebsocketToken(channelId, userId)
+	if err != nil {
+		return nil, err
+	}
 
 	cookie := &http.Cookie{
-		Name:     "_sc_",
-		Value:    fmt.Sprintf("%d.%d", channelId, userId),
+		Name:     "_wst_",
+		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		MaxAge:   5,
 		SameSite: http.SameSiteNoneMode,
 	}
 
-	acw.RemoveUser(channelId, userId) // Just in case calling RemoveUser to delete any previous user sessions
+	acw.RemoveUser(channelId, userId, false) // Calling this just in case there are previous user sessions
 
 	acw.clientsWrapper[channelId][userId] = &ClientWrapper{
 		Cookie: cookie,
 		Conn:   nil,
 	}
 
-	currentlyAdding = false
-	return cookie
+	return cookie, nil
 }
 
 // Assign a connection object to a user
-func (acw *ActiveClientsWrapper) AssignConnection(channelId int, userId int, conn *websocket.Conn) error {
+func (acw *ActiveClientsWrapper) AssignConnection(channelId int, userId int, conn *websocket.Conn, wait bool) error {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
 	channel, exists := acw.clientsWrapper[channelId]
 	if !exists {
 		return fmt.Errorf("channel id (%v) does not exist in the map", channelId)
@@ -123,7 +159,27 @@ func (acw *ActiveClientsWrapper) AssignConnection(channelId int, userId int, con
 	}
 }
 
-func (acw *ActiveClientsWrapper) RemoveUser(channelId int, userId int) {
+func (acw *ActiveClientsWrapper) RemoveCookie(channelId int, userId int, wait bool) {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
+	channel, exists := acw.clientsWrapper[channelId]
+	if exists {
+		userInfo, exists := channel[userId]
+		if exists {
+			userInfo.Cookie = nil
+		}
+	}
+}
+
+func (acw *ActiveClientsWrapper) RemoveUser(channelId int, userId int, wait bool) {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
 	channel, channelExists := acw.clientsWrapper[channelId]
 	if channelExists {
 		userInfo, userExists := channel[userId]
@@ -134,7 +190,12 @@ func (acw *ActiveClientsWrapper) RemoveUser(channelId int, userId int) {
 	}
 }
 
-func (acw *ActiveClientsWrapper) SendMessagesToChannel(channelId int, message []Message) error {
+func (acw *ActiveClientsWrapper) SendMessagesToChannel(channelId int, message []Message, wait bool) error {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
 	channel, exists := acw.clientsWrapper[channelId]
 	if !exists {
 		return fmt.Errorf("channel id (%v) does not exits in the map", channelId)
@@ -146,7 +207,7 @@ func (acw *ActiveClientsWrapper) SendMessagesToChannel(channelId int, message []
 		if userInfo.Conn != nil {
 			err := userInfo.Conn.WriteJSON(message)
 			if err != nil {
-				log.Printf("Could not send message to: %v. %v", userId, err)
+				log.Printf("Could not send message to: %v. %v\n", userId, err)
 				savedError = err
 			}
 		}
@@ -155,57 +216,17 @@ func (acw *ActiveClientsWrapper) SendMessagesToChannel(channelId int, message []
 	return savedError
 }
 
-func (acw *ActiveClientsWrapper) Print() {
-	log.Println("Current active clients")
+func (acw *ActiveClientsWrapper) Print(wait bool) {
+	if wait {
+		waitForBusy()
+		defer freeBusy()
+	}
+
+	log.Println("Current active clients:")
 	for channelId, channel := range acw.clientsWrapper {
 		log.Printf("  Channel %v:\n", channelId)
 		for userId, user := range channel {
 			log.Printf("    User %v: %v\n", userId, *user)
 		}
 	}
-}
-
-// Cannot import glb here, so unfortunately have to define the origins again
-var allowedOrigins = []string{"http://localhost:5000", "http://192.168.1.12:5000"}
-
-func checkOrigin(origin string) string {
-	for _, allowedOrigin := range allowedOrigins {
-		if allowedOrigin == origin {
-			return origin
-		}
-	}
-	return ""
-}
-
-func (routerDec *RouterDec) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	origin = checkOrigin(origin)
-
-	if origin != "" {
-		// General backend access
-		w.Header().Set(
-			"Access-Control-Allow-Origin", origin,
-		)
-		// Ability to set cookies
-		w.Header().Set(
-			"Access-Control-Allow-Credentials", "true",
-		)
-		// Allowed methods
-		w.Header().Set(
-			"Access-Control-Allow-Methods",
-			"POST, GET",
-		)
-		// Special allowed fields in headers
-		w.Header().Add(
-			"Access-Control-Allow-Headers",
-			"User-ID",
-			// "Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With, User-ID",
-		)
-	}
-
-	if r.Method == "OPTIONS" {
-		return
-	}
-
-	routerDec.Router.ServeHTTP(w, r)
 }
